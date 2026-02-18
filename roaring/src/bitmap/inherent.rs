@@ -896,6 +896,24 @@ impl RoaringBitmap {
         changed
     }
 
+    /// Extracts the values stored under `prefix` into a new bitmap with key 0.
+    ///
+    /// Each u32 in a [`RoaringBitmap`] is split into a 16-bit container key (prefix)
+    /// and a 16-bit suffix. This method returns a new bitmap containing only the
+    /// suffix values from the specified prefix, enabling cross-prefix operations
+    /// like intersection between containers that would normally never be compared.
+    ///
+    /// Returns an empty bitmap if the prefix is not present.
+    pub fn extract_prefix(&self, prefix: u16) -> RoaringBitmap {
+        let Ok(idx) = self.containers.binary_search_by_key(&prefix, |c| c.key) else {
+            return RoaringBitmap::new();
+        };
+        let container = &self.containers[idx];
+        RoaringBitmap {
+            containers: vec![Container { key: 0, store: container.store.clone() }],
+        }
+    }
+
     /// Ensure the bitmap is internally valid
     ///
     /// This is useful for development, but is not needed for normal use:
@@ -1190,5 +1208,55 @@ mod tests {
         let mut bitmap = RoaringBitmap::from_iter([1, 2, 3]);
         bitmap.remove_biggest(4);
         assert_eq!(bitmap, RoaringBitmap::default());
+    }
+
+    #[test]
+    fn extract_prefix_found() {
+        let base = (1u32 << 16) * 3;
+        let bitmap = RoaringBitmap::from_iter([base + 10, base + 20, base + 30]);
+        let extracted = bitmap.extract_prefix(3);
+        assert_eq!(extracted, RoaringBitmap::from_iter([10, 20, 30]));
+    }
+
+    #[test]
+    fn extract_prefix_missing() {
+        let bitmap = RoaringBitmap::from_iter([1, 2, 3]);
+        let extracted = bitmap.extract_prefix(5);
+        assert!(extracted.is_empty());
+    }
+
+    #[test]
+    fn extract_prefix_empty_bitmap() {
+        let bitmap = RoaringBitmap::new();
+        assert!(bitmap.extract_prefix(0).is_empty());
+    }
+
+    #[test]
+    fn extract_prefix_multiple_containers() {
+        let mut bitmap = RoaringBitmap::new();
+        bitmap.insert_range(0..10);
+        bitmap.insert_range((1u32 << 16)..((1u32 << 16) + 5));
+        bitmap.insert_range((2u32 << 16)..((2u32 << 16) + 3));
+
+        let extracted = bitmap.extract_prefix(1);
+        assert_eq!(extracted, RoaringBitmap::from_iter(0..5));
+    }
+
+    #[test]
+    fn extract_prefix_enables_intersection() {
+        let mut bitmap = RoaringBitmap::new();
+        let p1 = 1u32 << 16;
+        let p2 = 2u32 << 16;
+        for v in [10, 20, 30, 40] {
+            bitmap.insert(p1 + v);
+        }
+        for v in [20, 30, 50] {
+            bitmap.insert(p2 + v);
+        }
+
+        let a = bitmap.extract_prefix(1);
+        let b = bitmap.extract_prefix(2);
+        let intersection = a & b;
+        assert_eq!(intersection, RoaringBitmap::from_iter([20, 30]));
     }
 }

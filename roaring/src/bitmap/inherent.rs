@@ -909,9 +909,7 @@ impl RoaringBitmap {
             return RoaringBitmap::new();
         };
         let container = &self.containers[idx];
-        RoaringBitmap {
-            containers: vec![Container { key: 0, store: container.store.clone() }],
-        }
+        RoaringBitmap { containers: vec![Container { key: 0, store: container.store.clone() }] }
     }
 
     /// Ensure the bitmap is internally valid

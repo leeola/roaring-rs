@@ -912,6 +912,24 @@ impl RoaringBitmap {
         RoaringBitmap { containers: vec![Container { key: 0, store: container.store.clone() }] }
     }
 
+    /// Returns the distinct 16-bit container keys (prefixes) of the bitmap, in ascending order.
+    ///
+    /// Each u32 in a [`RoaringBitmap`] is split into a 16-bit container key (prefix)
+    /// and a 16-bit suffix. This method gives each prefix that holds at least one value,
+    /// with no iteration over the values.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use roaring::RoaringBitmap;
+    ///
+    /// let rb = RoaringBitmap::from_iter([3 << 16 | 7, 1 << 16, 1 << 16 | 5]);
+    /// assert_eq!(rb.prefixes().collect::<Vec<u16>>(), [1, 3]);
+    /// ```
+    pub fn prefixes(&self) -> impl Iterator<Item = u16> + '_ {
+        self.containers.iter().map(|c| c.key)
+    }
+
     /// Ensure the bitmap is internally valid
     ///
     /// This is useful for development, but is not needed for normal use:
@@ -1256,5 +1274,19 @@ mod tests {
         let b = bitmap.extract_prefix(2);
         let intersection = a & b;
         assert_eq!(intersection, RoaringBitmap::from_iter([20, 30]));
+    }
+
+    #[test]
+    fn prefixes_multiple_containers() {
+        let mut bitmap = RoaringBitmap::new();
+        bitmap.insert_range((2u32 << 16)..((2u32 << 16) + 3));
+        bitmap.insert_range(0..10);
+        bitmap.insert(u32::MAX);
+        assert_eq!(bitmap.prefixes().collect::<Vec<u16>>(), [0, 2, u16::MAX]);
+    }
+
+    #[test]
+    fn prefixes_empty_bitmap() {
+        assert_eq!(RoaringBitmap::new().prefixes().count(), 0);
     }
 }
